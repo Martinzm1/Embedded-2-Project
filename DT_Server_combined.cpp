@@ -71,11 +71,13 @@ int x = 1;
 int simpleState = 1;
 float rate = 0.0;
 char filename[40];
-
-/* Thread to interface with the ProfileClient */
-HANDLE hClientThread;
+HANDLE hClientThread; // Thread to interface with the ProfileClient
 DWORD dwClientThreadID;
+
+// Function declarations
 VOID client_iface_thread(LPVOID parameters);
+LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam );
+BOOL CALLBACK EnumBrdProc( LPSTR lpszBrdName, LPSTR lpszDriverName, LPARAM lParam );
 
 /************************************************************************************
 * VOID client_iface_thread(LPVOID)
@@ -98,16 +100,16 @@ VOID client_iface_thread(LPVOID parameters) {
 		saddr_len = sizeof(saddr);
 		retval = recvfrom(comm->cmdrecvsock, ParamBuffer, sizeof(ParamBuffer), 0, (struct sockaddr *)&saddr, &saddr_len);
 		switch (simpleState) {
-				case 1:
-					strcpy(filename, ParamBuffer);
-					simpleState = 2;
-					break;
-				case 2:
-					rate = atof(ParamBuffer);
-					simpleState = 3;
-					break;
-				case 3:
-					break;
+			case 1:
+				strcpy(filename, ParamBuffer);
+				simpleState = 2;
+				break;
+			case 2:
+				rate = atof(ParamBuffer);
+				simpleState = 3;
+				break;
+			case 3:
+				break;
 		}
 	}
 }
@@ -119,6 +121,10 @@ LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam ) {
           HBUF hBuf;
           counter++;
           olDaGetBuffer( (HDASS)hAD, &hBuf );
+
+          // Check CONTADC.C > Input Box > if( hBuffer )
+
+	
           olDaPutBuffer( (HDASS)hAD, hBuf );
           break;
 
