@@ -1,8 +1,5 @@
-/* 
-	Martin Zamora Martinez 1000995810
-	Clint Wetzel 1000717927
-*/
-
+//Martin Zamora Martinez
+//1000995810
 #include <string.h>
 #include <stdio.h>
 #include <Windows.h>
@@ -36,17 +33,22 @@ typedef struct sp_struct {
 	struct sp_flags		flags;
 } *sp_struct_t;
 
+
+
+
 #define ERR_CODE_NONE	0	/* no error */
 #define ERR_CODE_SWI	1	/* software error */
-#define CMD_LENGTH	5
-#define ARG_NONE	1
-#define ARG_NUMBER	2
+
+/////// 
+#define CMD_LENGTH		5
+
+#define ARG_NONE		1
+#define ARG_NUMBER		2
 
 typedef struct {
 	char cmd[CMD_LENGTH];
 	int arg;
 } cmd_struct_t;
-
 WSADATA wsaData;
 int x = 1;
 
@@ -54,14 +56,14 @@ int x = 1;
 HANDLE hClientThread;
 DWORD dwClientThreadID;
 VOID client_iface_thread(LPVOID parameters);
-
 char snum[5];
 char fName[20];
 char sampRate[20];
 void getInputs();
 void processData();
 
-int main(){
+int main()
+{
 	struct sp_struct profiler;
 	struct sockaddr_in saddr;
 	struct hostent *hp;
@@ -92,8 +94,12 @@ int main(){
 	hp->h_length = 4;
 
 	//broadcast in 255.255.255.255 network 	
+
 	hp->h_addr_list[0][0] = (signed char)255;//192;129
 	hp->h_addr_list[0][1] = (signed char)255; //168;107
+
+
+
 	hp->h_addr_list[0][2] = (signed char)255; //0;255  
 	hp->h_addr_list[0][3] = (signed char)255; //140;255
 	hp->h_addr_list[0][4] = 0;
@@ -141,8 +147,7 @@ int main(){
 	SetThreadPriority(hClientThread, THREAD_PRIORITY_LOWEST);
 
 	int lastSample = 0;
-
-	getInputs();
+	getInputs();//grab inputs
 	//send data to server
 	//receive data 
 	printf("%s    %s \n", sampRate, fName);
