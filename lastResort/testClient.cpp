@@ -47,6 +47,7 @@ typedef struct sp_struct {
 #define ARG_NUMBER		2
 #define noop ((void)0)
 #define BUF_LEN			2000
+#define B_COEF			101
 
 
 typedef struct {
@@ -62,16 +63,19 @@ DWORD dwClientThreadID;
 VOID client_iface_thread(LPVOID parameters);
 char snum[5];
 char fName[20];
+char filName[20];
 char sampRate[20];
 double buffer[BUF_LEN];
 int bufBusy = 2;
 int lastSample = 0;
 int dCount;
-double avg, max, min;
+double avg, max, min, area;
 void getInputs();
 void processData();
 double maxSignal(double *d_signal, int length);
 double avgSignal(double *d_signal, double average_offset, int length);
+double integrate();
+
 
 int main()
 {
@@ -81,6 +85,7 @@ int main()
 	int res = 0;
 	char ParamBuffer[110];
 	char inputChar[110] = "";
+	double filter[B_COEF];
 	for (int count = 0; count < BUF_LEN; count++) {
 		buffer[count] = count;
 	}
@@ -162,9 +167,19 @@ int main()
 	getInputs();//grab inputs
 				//send data to server
 				//receive data 
+	FILE *fp2;
+	fp2 = fopen(filName, "r");
+	for (int i = 0; i < B_COEF - 1; i++) {
+		fscanf(fp2, "%lf\n", &filter[i]);
+	}
+	fclose(fp2);
 	printf("%s    %s \n", sampRate, fName);
 	send(comm->datasock, fName, sizeof(fName), 0);
 	send(comm->datasock, sampRate, sizeof(sampRate), 0);
+	for (int i = 0; i < B_COEF - 1; i++) {
+		sprintf(sampRate, "%f", filter[i]);
+		send(comm->datasock, sampRate, sizeof(sampRate), 0);
+	}
 	while (!lastSample) {
 		if (bufBusy==0) { //buffer complete
 			processData();// process full buffer
@@ -184,7 +199,8 @@ int main()
 	//end
 
 	//processData();
-	printf("END");
+	printf("Data saved in %s\n",fName);
+	printf("Ending Client.\n");
 
 	return 0;
 }
@@ -231,8 +247,9 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 }
 
 void getInputs() {
-	char temp[20], ch[5];
-	printf("Input desired filename:\n");
+	printf("Input filter filename:\n");
+	scanf("%s", filName);
+	printf("Input desired results filename:\n");
 	scanf("%s", fName);
 	printf("Input desired Sampling Rate:\n");
 	scanf("%s", sampRate);
@@ -242,9 +259,18 @@ void getInputs() {
 	return;
 }
 void processData() {
+	FILE *fp;
+	fp = fopen(fName, "a");
 	max=maxSignal(buffer, BUF_LEN);
 	avg=avgSignal(buffer, 100.0,BUF_LEN);
-	printf("avg: %f max: %f\n", avg, max);
+	area = integrate();
+	printf("area: %f avg: %f max: %f\n",area, avg, max);
+	
+	fprintf(fp, "area: %f avg : %f max : %f\n",area, avg, max);
+	for (int i = 0; i < BUF_LEN; i++) {
+		fprintf(fp, "%f \n", buffer[i]);
+	}
+	fclose(fp);
 	return;
 }
 double maxSignal(double *d_signal, int length) {
@@ -271,4 +297,19 @@ double avgSignal(double *d_signal, double average_offset, int length) {
 	avg = sum / ((double)length - average_offset);
 
 	return avg;
+}
+
+double integrate() {
+	return 0.0;
+	int count, max;
+	double sum, lowLim, highLim, width;
+	sum = 0;
+	width = 1 / atof(sampRate);
+	max = BUF_LEN / 4;
+	for (int count = 0; count < max; count++) {
+		lowLim = buffer[count];
+		highLim = buffer[count + 1];
+		sum = sum + ((lowLim + highLim)*(width / 2));
+	}
+	return sum;
 }
