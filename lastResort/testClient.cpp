@@ -177,8 +177,8 @@ int main()
 	send(comm->datasock, fName, sizeof(fName), 0);
 	send(comm->datasock, sampRate, sizeof(sampRate), 0);
 	for (int i = 0; i < B_COEF - 1; i++) {
-		sprintf(sampRate, "%f", filter[i]);
-		send(comm->datasock, sampRate, sizeof(sampRate), 0);
+		sprintf(ParamBuffer, "%f", filter[i]);
+		send(comm->datasock, ParamBuffer, sizeof(ParamBuffer), 0);
 	}
 	while (!lastSample) {
 		if (bufBusy==0) { //buffer complete
@@ -300,12 +300,12 @@ double avgSignal(double *d_signal, double average_offset, int length) {
 }
 
 double integrate() {
-	return 0.0;
 	int count, max;
 	double sum, lowLim, highLim, width;
 	sum = 0;
 	width = 1 / atof(sampRate);
-	max = BUF_LEN / 4;
+	printf("%f %s\n", width, sampRate);
+	max = BUF_LEN / 2;
 	for (int count = 0; count < max; count++) {
 		lowLim = buffer[count];
 		highLim = buffer[count + 1];
