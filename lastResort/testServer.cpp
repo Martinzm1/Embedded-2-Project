@@ -56,6 +56,7 @@ int x = 1;
 int simpleState = 1;
 float rate = 0.0;
 char filename[40];
+double d_coef[B_COEF];
 
 /* Thread to interface with the ProfileClient */
 HANDLE hClientThread;
@@ -74,16 +75,11 @@ int main(){
 	char inputChar[100] = "";
 	double fullData[20000];
 	double dataBuffer[BUF_LEN];
-	double d_coef[B_COEF];
+	
 	double d_fsignal[BUF_LEN + B_COEF - 1] = { 0 };
 	FILE *fp = fopen("./Mysignal.txt", "r");
 	for (i = 0; i < 20000; i++) {
 		fscanf(fp, "%lf\n", &fullData[i]);
-	}
-	fclose(fp);
-	fp = fopen("./b.txt", "r");
-	for (i = 0; i < B_COEF - 1; i++) {
-		fscanf(fp, "%lf\n", &d_coef[i]);
 	}
 	fclose(fp);
 	memset(&profiler, 0, sizeof(profiler));
@@ -155,10 +151,10 @@ int main(){
 
 	hClientThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)client_iface_thread, (LPVOID)&profiler, 0, &dwClientThreadID);
 	SetThreadPriority(hClientThread, THREAD_PRIORITY_LOWEST);
-	while (simpleState != 3) {
+	while (simpleState != 4) {
 		noop;
 	}
-	printf("Rate and filename recieved and stored\n");
+	printf("Rate, filter coeffecients and filename recieved and stored\n");
 	printf("%s %f", filename, rate);
 	// turn on LEDS
 	for (int count2 = 0; count2 < 10; count2++) {
@@ -174,23 +170,12 @@ int main(){
 		}
 		sprintf(inputChar, "endBuf");
 		send(comm->datasock, inputChar, sizeof(inputChar), 0);
-		printf("startofsleep\n");
-		Sleep(1000);
-		Sleep(1000);
-		printf("endofsleep\n");
+		printf("Buffer Sent\n");
 	}
-	noop;
 	sprintf(inputChar, "FINAL");
 	send(comm->datasock, inputChar, sizeof(inputChar), 0);
-	while (x == 1)
-	{
-		/*if (_kbhit())
-		{
-			scanf("%s", inputChar);
-			send(comm->datasock, inputChar, sizeof(inputChar), 0);
-		}*/
-
-	}
+	printf("End command sent\n");
+	printf("Ending Server.\n");
 	return 0;
 }
 
@@ -210,7 +195,7 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 	struct sockaddr_in saddr;
 	int saddr_len;
 	char ParamBuffer[110];
-
+	int filterCount = 0;
 
 	printf("Executing Thread\n");
 	printf("Checking for Data\n");
@@ -228,6 +213,15 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 			simpleState = 3;
 			break;
 		case 3:
+			if (filterCount < (B_COEF-2)) {
+				d_coef[filterCount] = atof(ParamBuffer);
+				filterCount++;
+			}
+			else {
+				simpleState = 4;
+			}
+			break;
+		case 4:
 			break;
 		}
 	}
@@ -235,7 +229,10 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 }
 void filterSignal(double *d_samples, double *d_coef, double *d_fsignal) {
 	int i, j;
-
+#pragma omp parallel
+	for (j = 0; j < BUF_LEN; j++) {
+		d_fsignal[j] = 0;
+	}
 # pragma omp parallel for private(j)
 	for (i = 0; i < B_COEF - 1; i++) {
 		for (j = 0; j < BUF_LEN - 1; j++) {
