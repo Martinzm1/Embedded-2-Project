@@ -70,7 +70,8 @@ char str[STRLEN];        /* global string for general text manipulation */
 int counter = 0;
 WSADATA wsaData;
 int x = 1;
-int simpleState = 1;
+int socketState = 1;
+int channelState = 0;
 float rate = 0.0;
 char filename[40];
 int channel = 0;
@@ -102,14 +103,14 @@ VOID client_iface_thread(LPVOID parameters) {
 		memset(ParamBuffer, 0, sizeof(ParamBuffer));
 		saddr_len = sizeof(saddr);
 		retval = recvfrom(comm->cmdrecvsock, ParamBuffer, sizeof(ParamBuffer), 0, (struct sockaddr *)&saddr, &saddr_len);
-		switch (simpleState) {
+		switch (socketState) {
 		case 1:
 			strcpy(filename, ParamBuffer);
-			simpleState = 2;
+			socketState = 2;
 			break;
 		case 2:
 			rate = atof(ParamBuffer);
-			simpleState = 3;
+			socketState = 3;
 			break;
 		case 3:
 			break;
@@ -118,19 +119,18 @@ VOID client_iface_thread(LPVOID parameters) {
 }
 
 LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam ) {
-	DBL min=0,max=0;
-	DBL voltsA;
-	ULNG valueA;
-	ULNG samples;
-	UINT encoding=0,resolution=0;
-	int state=0;
-	double tVal=2.51;
-	PDWORD  pBuffer32 = NULL;
-	PWORD  pBuffer = NULL;
-
 	switch( msg ) {
 	case OLDA_WM_BUFFER_DONE:
+		DBL min=0,max=0;
+		DBL voltsA;
+		ULNG valueA;
+		ULNG samples;
+		UINT encoding=0,resolution=0;
+		double tVal=2.51;
+		PDWORD  pBuffer32 = NULL;
+		PWORD  pBuffer = NULL;
 		HBUF hBuf;
+			
 		olDaGetBuffer( (HDASS)hAD, &hBuf );
 		// Check CONTADC.C > Input Box > if( hBuffer )
 		/* get sub system information for code/volts conversion */
@@ -142,44 +142,51 @@ LRESULT WINAPI WndProc( HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam ) {
 		olDmGetValidSamples( hBuf, &samples );
 
 		/* get pointer to the buffer */
-		if (resolution > 16) {
+		if (resolution > 16) { // 16 resolution
 			olDmGetBufferPtr( hBuf,(LPVOID*)&pBuffer32);
-			/* get last sample in buffer */
-			valueA = pBuffer32[samples-1];
+			if(channelState == 0){ // if waiting for channel 0 
+				// Get last sample in buffer to determine if switch is High || Low
+				valueA = pBuffer32[samples-1];
+			}
+			else if(channelState == 1){ // if switch has been activated
+				// Transmit buffer? Filter buffer?
+			}
 		}
-		else {
+		else { // other resolution
 			olDmGetBufferPtr( hBuf,(LPVOID*)&pBuffer);
-			valueA = pBuffer[samples-1]; //value from 1 input
+			if(channelState == 0){ // if waiting for channel 0 
+				// Get last sample in buffer to determine if switch is High || Low
+				valueA = pBuffer32[samples-1];
+			}
+			else if(channelState == 1){ // if switch has been activated
+				// Filter buffer?
+			}
 		}
 		/* put buffer back to ready list */
 		olDaPutBuffer((HDASS)hAD, hBuf);
 
 		/*  convert value to volts */
-		if (encoding != OL_ENC_BINARY) {
+		if ((encoding != OL_ENC_BINARY) && (channelState == 0)) { // only calculate Volts from valueA if looking for channel 0 
 			/* convert to offset binary by inverting the sign bit */
 			valueA ^= 1L << (resolution-1);
 			valueA &= (1L << resolution) - 1;     /* zero upper bits */
+			voltsA = ((float)max-(float)min)/(1L<<resolution)*valueA + (float)min;
 		}
 
-		voltsA = ((float)max-(float)min)/(1L<<resolution)*valueA + (float)min;
-		
 		/* display value */
-		sprintf(str,"Channel %d: %.2f", channel, voltsA);
-		puts(str);
-		if (state == 0) {
+		if (channelState == 0) { // if waiting for switch
 			if(voltsA > tVal){
-				sprintf(str, " ON");
-				state=1;
+				sprintf(str,"Channel %d: %.2f \nStatus: ON", channel, voltsA);
+				channelState = 1;
 			}
 			else {
-				sprintf(str, " OFF");
+				sprintf(str,"Channel %d: %.2f \nStatus: OFF", channel, voltsA);
 			}
 		}
-		else {
-			//checkB
+		else { // if switch activated
+			// Transmit Buffer?
 			sprintf(str,"State is now next state");
 		}
-		printf("Status");
 		puts(str);
 		olDaPutBuffer( (HDASS)hAD, hBuf );
 		break;
@@ -302,7 +309,7 @@ int main(){
 
 	hClientThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)client_iface_thread, (LPVOID)&profiler, 0, &dwClientThreadID);
 	SetThreadPriority(hClientThread, THREAD_PRIORITY_LOWEST);
-	while (simpleState != 3) {
+	while (socketState != 3) {
 		noop;
 	}
 	printf("Rate and filename recieved and stored\n");
@@ -337,14 +344,15 @@ int main(){
 	CHECKERROR( olDaEnumBoards( EnumBrdProc, (LPARAM)&hDev ) );
 
 	HDASS hAD = NULL;
-	// Channel setup
 	CHECKERROR( olDaGetDASS( hDev, OLSS_AD, 0, &hAD ) ); 
 
 	CHECKERROR( olDaSetWndHandle( hAD, hWnd, 0 ) ); 
 
 	CHECKERROR( olDaSetDataFlow( hAD, OL_DF_CONTINUOUS ) ); 
-	CHECKERROR( olDaSetChannelListSize( hAD, 1 ) );
-	CHECKERROR( olDaSetChannelListEntry( hAD, 0, 0 ) );
+	CHECKERROR( olDaSetChannelListSize( hAD, 2 ) ); // 2 Channels
+	// Channel setup
+	CHECKERROR( olDaSetChannelListEntry( hAD, 0, 0 ) ); // Channel 0
+	CHECKERROR( olDaSetChannelListEntry( hAD, 1, 1 ) ); // Channel 1
 	CHECKERROR( olDaSetGainListEntry( hAD, 0, 1 ) );
 	CHECKERROR( olDaSetTrigger( hAD, OL_TRG_SOFT ) );
 	CHECKERROR( olDaSetClockSource( hAD, OL_CLK_INTERNAL ) ); 
@@ -379,7 +387,6 @@ int main(){
 	// we are using a mix of Windows messages for data acquistion and console approaches
 	// for keyboard input.
 	// GetMessage( message structure, handle of window receiving the message, lowest message to examine, highest message to examine)
-
 	while( GetMessage( &msg, hWnd, 0, 0 ) ) {
 		TranslateMessage( &msg );    // Translates virtual key codes       
 		DispatchMessage( &msg );     // Dispatches message to window 
