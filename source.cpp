@@ -158,9 +158,8 @@ int main()
 		//processData();
 	}
 	processData();
-	//save file
+	//save file 0.00003
 	//end
-	
 
 	printf("END");
 	
