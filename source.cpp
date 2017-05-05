@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <WinSock.h>
 #include <time.h>
+#include <omp.h>
 #include <conio.h>
 #include <iostream>
 #include <fstream>
@@ -44,6 +45,10 @@ typedef struct sp_struct {
 
 #define ARG_NONE		1
 #define ARG_NUMBER		2
+#define noop ((void)0)
+#define BUF_LEN			2000
+#define B_COEF			101
+#define PI 3.1415926535897
 
 typedef struct {
 	char cmd[CMD_LENGTH];
@@ -58,9 +63,22 @@ DWORD dwClientThreadID;
 VOID client_iface_thread(LPVOID parameters);
 char snum[5];
 char fName[20];
+char filName[20];
 char sampRate[20];
+char maxFile[40];
+char areaFile[40];
+char minFile[40];
+double buffer[BUF_LEN];
+int bufBusy = 2;
+int lastSample = 0;
+int dCount;
+double max, min, area;
 void getInputs();
 void processData();
+double maxSignal(double *d_signal, int length);
+double minSignal(double *d_signal, int length);
+double integrate();
+
 
 int main()
 {
@@ -70,8 +88,10 @@ int main()
 	int res = 0;
 	char ParamBuffer[110];
 	char inputChar[110] = "";
-
-
+	double filter[B_COEF];
+	for (int count = 0; count < BUF_LEN; count++) {
+		buffer[count] = count;
+	}
 	memset(&profiler, 0, sizeof(profiler));
 	sp_comm_t comm = &profiler.comm;
 
@@ -146,23 +166,45 @@ int main()
 	hClientThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)client_iface_thread, (LPVOID)&profiler, 0, &dwClientThreadID);
 	SetThreadPriority(hClientThread, THREAD_PRIORITY_LOWEST);
 
-	int lastSample = 0;
+
 	getInputs();//grab inputs
-	//send data to server
-	//receive data 
+				//send data to server
+				//receive data 
+	FILE *fp2;
+	fp2 = fopen(filName, "r");
+	for (int i = 0; i < B_COEF - 1; i++) {
+		fscanf(fp2, "%lf\n", &filter[i]);
+	}
+	fclose(fp2);
 	printf("%s    %s \n", sampRate, fName);
 	send(comm->datasock, fName, sizeof(fName), 0);
 	send(comm->datasock, sampRate, sizeof(sampRate), 0);
-	while (!lastSample) {
-		lastSample = 1;
-		//processData();
+	for (int i = 0; i < B_COEF - 1; i++) {
+		sprintf(ParamBuffer, "%f", filter[i]);
+		send(comm->datasock, ParamBuffer, sizeof(ParamBuffer), 0);
 	}
-	processData();
-	//save file 0.00003
+	while (!lastSample) {
+		if (bufBusy==0) { //buffer complete
+			processData();// process full buffer
+			printf("data processed\n");
+			bufBusy = 3;// dont keep processing same data
+		}
+		if (bufBusy == 1) {//buffer is being filled
+			//printf("waiting for buffer to fill\n");
+			noop;// keep waiting for full buffer
+		}
+		if (bufBusy == 2) {// no buffer recieved yet
+			printf("no buffer yet\n");
+			noop;
+		}
+	}
+	//save file
 	//end
 
-	printf("END");
-	
+	//processData();
+	printf("Data saved in %s\n",fName);
+	printf("Ending Client.\n");
+
 	return 0;
 }
 
@@ -188,16 +230,33 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 		memset(ParamBuffer, 0, sizeof(ParamBuffer));
 		saddr_len = sizeof(saddr);
 		retval = recvfrom(comm->cmdrecvsock, ParamBuffer, sizeof(ParamBuffer), 0, (struct sockaddr *)&saddr, &saddr_len);
-		printf("The returned value is : %s ", ParamBuffer);
-
+		if (bufBusy == 1) {
+			buffer[dCount] = atof(ParamBuffer);
+			dCount++;
+			//printf("The value is : %s \n", ParamBuffer);
+		}
+		if (strcmp(ParamBuffer, "startBuf") == 0) {
+			bufBusy = 1;
+			dCount = 0;
+		}
+		if (strcmp(ParamBuffer, "endBuf") == 0) {
+			bufBusy = 0;
+		}
+		if (strcmp(ParamBuffer, "FINAL") == 0) {
+			lastSample = 1;
+			printf("final message recieved\n");
+		}
 	}
-	x = 0;
 }
 
 void getInputs() {
-	char temp[20], ch[5];
-	printf("Input desired filename:\n");
+	printf("Input filter filename:\n");
+	scanf("%s", filName);
+	printf("Input desired data filename prefix:\n");
 	scanf("%s", fName);
+	sprintf(maxFile, "%s_max.txt", fName);
+	sprintf(areaFile, "%s_area.txt", fName);
+	sprintf(minFile, "%s_min.txt", fName);
 	printf("Input desired Sampling Rate:\n");
 	scanf("%s", sampRate);
 	printf("Press ENTER to begin Data Collection\n");
@@ -206,5 +265,59 @@ void getInputs() {
 	return;
 }
 void processData() {
+	FILE *fpMax, *fpArea, *fpMin;
+	fpMax = fopen(maxFile, "a");
+	fpArea = fopen(areaFile, "a");
+	fpMin = fopen(minFile, "a");
+	max=maxSignal(buffer, BUF_LEN);
+	min = minSignal(buffer, BUF_LEN);
+	area = integrate();
+	printf("area: %f min: %f max: %f\n",area, min, max);
+	fprintf(fpMax,"%f\n", max);
+	fprintf(fpArea, "%f\n", area);
+	fprintf(fpMin, "%f\n", min);
+	fclose(fpMin);
+	fclose(fpArea);
+	fclose(fpMax);
 	return;
+}
+double maxSignal(double *d_signal, int length) {
+	int i;
+	double max = d_signal[0];
+
+	for (i = 100; i < length-100; i++) {
+		if (d_signal[i] > max) {
+			max = d_signal[i];
+		}
+	}
+
+	return max;
+}
+double minSignal(double *d_signal, int length) {
+	int i;
+	double min = d_signal[100];
+
+	for (i = 100; i < length-100; i++) {
+		if (d_signal[i] < min) {
+			min = d_signal[i];
+		}
+	}
+	return min;
+}
+
+
+double integrate() {
+	int count, max;
+	double sum, lowLim, highLim;
+	lowLim = 0;
+	highLim = PI/2;
+	max = BUF_LEN/4;
+	sum = buffer[101];
+	printf("%f %f\n", buffer[101],buffer[550]);
+	for (int count = 101; count < max +49; count++) {
+		sum = sum + (2 * buffer[count]);
+	}
+	sum = sum + buffer[550];
+	sum = sum*(highLim - lowLim) / (2*max);
+	return sum;
 }
