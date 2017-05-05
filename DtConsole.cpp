@@ -404,7 +404,7 @@ int main() {
 
 	HBUF hBufs[NUM_OL_BUFFERS];
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
-		if (OLSUCCESS != olDmAllocBuffer(GHND, 1000, &hBufs[i])) {
+		if (OLSUCCESS != olDmAllocBuffer(GHND, 2000, &hBufs[i])) {
 			for (i--; i >= 0; i--) {
 				olDmFreeBuffer(hBufs[i]);
 			}
