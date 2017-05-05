@@ -72,9 +72,11 @@ char str[STRLEN];        /* global string for general text manipulation */
 int counter = 0;
 WSADATA wsaData;
 DBL *arrData;
+DBL *filData;
 int x = 1;
 int socketState = 1;
 int channelState = 0;
+int endSwitch = 0;
 float sampleRate = 0.0;
 char filename[40];
 char dataFile[40];
@@ -190,6 +192,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 				channelState = 1;
 			}
 			else {
+				endSwitch = 1;
 				sprintf(str, "Channel 0: %.2f Status: OFF ", voltsA);
 			}
 		}
@@ -202,8 +205,10 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 				counter++;
 			}
 			else {
+				channelState = 0; // now look back at the switch
 				counter = 0;
 				transmit = 1;
+				filterSignal(arrData, d_coef, filData); //data filtered
 			}
 		}
 		puts(str);
@@ -339,9 +344,10 @@ int main() {
 	fpD = fopen(dataFile, "a");
 	fpFD = fopen(filFile, "a");
 
-	arrData = (DBL *)malloc(sizeof(DBL) * sampleRate / 200);
-
+	arrData = (DBL *)malloc(sizeof(DBL) * sampleRate);
+	filData = (DBL*)malloc(sizeof(DBL)*((sampleRate) + B_COEF-1));
 	// turn on LEDS
+
 	// end of TX
 
 	// create a window for messages
@@ -371,6 +377,7 @@ int main() {
 	CHECKERROR(olDaEnumBoards(EnumBrdProc, (LPARAM)&hDev));
 
 	HDASS hAD = NULL;
+	HDASS hAD2 = NULL;
 	CHECKERROR(olDaGetDASS(hDev, OLSS_AD, 0, &hAD));
 
 	CHECKERROR(olDaSetWndHandle(hAD, hWnd, 0));
@@ -387,6 +394,12 @@ int main() {
 	CHECKERROR(olDaSetClockFrequency(hAD, sampleRate));
 	CHECKERROR(olDaSetWrapMode(hAD, OL_WRP_NONE));
 	CHECKERROR(olDaConfig(hAD));
+
+	/* get handle to DOUT sub system  for LED turn on*/
+	CHECKERROR(olDaGetDASS(hDev, OLSS_DOUT, 0, &hAD2));
+	CHECKERROR(olDaSetDataFlow(hAD2, OL_DF_SINGLEVALUE));
+	CHECKERROR(olDaConfig(hAD2));
+	CHECKERROR(olDaPutSingleValue(hAD2, 1, 0, 1.0));
 
 	HBUF hBufs[NUM_OL_BUFFERS];
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
@@ -419,17 +432,16 @@ int main() {
 		TranslateMessage(&msg);    // Translates virtual key codes       
 		DispatchMessage(&msg);     // Dispatches message to window 
 		if (transmit == 1) {
-			while (counter < sampleRate / 200) {
-				printf("Transmitting back to client %lf\n", arrData[counter]);
-				sprintf(strSend, "%lf", arrData[counter]);
+			while (counter < BUF_LEN) {
+				printf("Transmitting back to client %lf\n", filData[counter]);
+				sprintf(strSend, "%lf", filData[counter]);
 				send(comm->datasock, strSend, sizeof(strSend), 0);
 				counter++;
 			}
 			transmit = 0;
 			counter = 0;
 		}
-		if (_kbhit()) {
-			_getch();
+		if ( endSwitch) { //if switch is turned off.
 			PostQuitMessage(0);
 		}
 	}
@@ -442,7 +454,8 @@ int main() {
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
 		olDmFreeBuffer(hBufs[i]);
 	}
-
+	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));
+	CHECKERROR(olDaReleaseDASS(hAD2));
 	olDaTerminate(hDev);
 	exit(0);
 }
