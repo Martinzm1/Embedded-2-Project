@@ -48,7 +48,7 @@ typedef struct sp_struct {
 #define noop ((void)0)
 #define BUF_LEN			2000
 #define B_COEF			101
-
+#define PI 3.1415926535897
 
 typedef struct {
 	char cmd[CMD_LENGTH];
@@ -65,15 +65,18 @@ char snum[5];
 char fName[20];
 char filName[20];
 char sampRate[20];
+char maxFile[40];
+char areaFile[40];
+char minFile[40];
 double buffer[BUF_LEN];
 int bufBusy = 2;
 int lastSample = 0;
 int dCount;
-double avg, max, min, area;
+double max, min, area;
 void getInputs();
 void processData();
 double maxSignal(double *d_signal, int length);
-double avgSignal(double *d_signal, double average_offset, int length);
+double minSignal(double *d_signal, int length);
 double integrate();
 
 
@@ -249,8 +252,11 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 void getInputs() {
 	printf("Input filter filename:\n");
 	scanf("%s", filName);
-	printf("Input desired results filename:\n");
+	printf("Input desired data filename prefix:\n");
 	scanf("%s", fName);
+	sprintf(maxFile, "%s_max.txt", fName);
+	sprintf(areaFile, "%s_area.txt", fName);
+	sprintf(minFile, "%s_min.txt", fName);
 	printf("Input desired Sampling Rate:\n");
 	scanf("%s", sampRate);
 	printf("Press ENTER to begin Data Collection\n");
@@ -259,25 +265,27 @@ void getInputs() {
 	return;
 }
 void processData() {
-	FILE *fp;
-	fp = fopen(fName, "a");
+	FILE *fpMax, *fpArea, *fpMin;
+	fpMax = fopen(maxFile, "a");
+	fpArea = fopen(areaFile, "a");
+	fpMin = fopen(minFile, "a");
 	max=maxSignal(buffer, BUF_LEN);
-	avg=avgSignal(buffer, 100.0,BUF_LEN);
+	min = minSignal(buffer, BUF_LEN);
 	area = integrate();
-	printf("area: %f avg: %f max: %f\n",area, avg, max);
-	
-	fprintf(fp, "area: %f avg : %f max : %f\n",area, avg, max);
-	for (int i = 0; i < BUF_LEN; i++) {
-		fprintf(fp, "%f \n", buffer[i]);
-	}
-	fclose(fp);
+	printf("area: %f min: %f max: %f\n",area, min, max);
+	fprintf(fpMax,"%f\n", max);
+	fprintf(fpArea, "%f\n", area);
+	fprintf(fpMin, "%f\n", min);
+	fclose(fpMin);
+	fclose(fpArea);
+	fclose(fpMax);
 	return;
 }
 double maxSignal(double *d_signal, int length) {
 	int i;
 	double max = d_signal[0];
 
-	for (i = 0; i < length; i++) {
+	for (i = 100; i < length; i++) {
 		if (d_signal[i] > max) {
 			max = d_signal[i];
 		}
@@ -285,31 +293,31 @@ double maxSignal(double *d_signal, int length) {
 
 	return max;
 }
+double minSignal(double *d_signal, int length) {
+	int i;
+	double min = d_signal[100];
 
-double avgSignal(double *d_signal, double average_offset, int length) {
-	int i, avg;
-	double sum = 0.0;
-
-# pragma omp parallel for reduction(+:sum)
-	for (i = average_offset; i < length; i++) {
-		sum = sum + d_signal[i];
+	for (i = 100; i < length; i++) {
+		if (d_signal[i] > min) {
+			min = d_signal[i];
+		}
 	}
-	avg = sum / ((double)length - average_offset);
-
-	return avg;
+	return min;
 }
+
 
 double integrate() {
 	int count, max;
-	double sum, lowLim, highLim, width;
-	sum = 0;
-	width = 1 / atof(sampRate);
-	printf("%f %s\n", width, sampRate);
-	max = BUF_LEN / 2;
-	for (int count = 0; count < max; count++) {
-		lowLim = buffer[count];
-		highLim = buffer[count + 1];
-		sum = sum + ((lowLim + highLim)*(width / 2));
+	double sum, lowLim, highLim;
+	lowLim = 0;
+	highLim = PI/2;
+	max = BUF_LEN/4;
+	sum = buffer[101];
+	printf("%f %f\n", buffer[101],buffer[550]);
+	for (int count = 101; count < max +49; count++) {
+		sum = sum + (2 * buffer[count]);
 	}
+	sum = sum + buffer[550];
+	sum = sum*(highLim - lowLim) / (2*max);
 	return sum;
 }
