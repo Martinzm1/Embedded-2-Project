@@ -335,10 +335,12 @@ int main() {
 
 	hClientThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)client_iface_thread, (LPVOID)&profiler, 0, &dwClientThreadID);
 	SetThreadPriority(hClientThread, THREAD_PRIORITY_LOWEST);
+	printf("Waiting for inputs and Star command from Client.\n");
 	while (socketState != 4) {
 		noop;
 	}
-	printf("Rate, filter coeffecients and filename recieved and stored\n");
+
+	printf("Sampling rate, filter coeffecients and filename recieved and stored\n");
 	printf("%s %f", filename, sampleRate);
 	sprintf(dataFile, "%s_data.txt", filename);
 	sprintf(filFile, "%s_filtered.txt", filename);
