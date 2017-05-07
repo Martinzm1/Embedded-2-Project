@@ -317,6 +317,7 @@ double integrate() {
 		sum = sum + (2 * buffer[count]);
 	}
 	sum = sum + buffer[900];
+
 	sum = sum*(highLim - lowLim) / (2*max);
 	return sum;
 }
