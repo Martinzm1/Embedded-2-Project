@@ -43,7 +43,7 @@ typedef struct sp_struct {
 #define ARG_NONE		1
 #define ARG_NUMBER		2
 #define noop ((void)0)
-#define BUF_LEN			2000
+#define BUF_LEN			1000
 #define B_COEF			101
 
 typedef struct {
@@ -54,8 +54,12 @@ WSADATA wsaData;
 
 int x = 1;
 int simpleState = 1;
+int filtered = 0;
 float rate = 0.0;
 char filename[40];
+char dataFile[40];
+char filFile[40];
+
 double d_coef[B_COEF];
 
 /* Thread to interface with the ProfileClient */
@@ -77,8 +81,8 @@ int main(){
 	double dataBuffer[BUF_LEN];
 	
 	double d_fsignal[BUF_LEN + B_COEF - 1] = { 0 };
-	FILE *fp = fopen("./Mysignal.txt", "r");
-	for (i = 0; i < 20000; i++) {
+	FILE *fp = fopen("./Noisy1Hz+100Hz.txt", "r");
+	for (i = 0; i < 10000; i++) {
 		fscanf(fp, "%lf\n", &fullData[i]);
 	}
 	fclose(fp);
@@ -156,26 +160,36 @@ int main(){
 	}
 	printf("Rate, filter coeffecients and filename recieved and stored\n");
 	printf("%s %f", filename, rate);
+	sprintf(dataFile, "%s_data.txt", filename);
+	sprintf(filFile, "%s_filtered.txt", filename);
 	// turn on LEDS
+	FILE *fpD, *fpFD;
+	fpD = fopen(dataFile, "a");
+	fpFD = fopen(filFile, "a");
 	for (int count2 = 0; count2 < 10; count2++) {
 		for (counter = 0; counter < BUF_LEN; counter++) {
 			dataBuffer[counter] = fullData[(count2*BUF_LEN) + counter];
+			fprintf(fpD, "%f\n", dataBuffer[counter]);
 		}
 		filterSignal(dataBuffer, d_coef, d_fsignal);
 		sprintf(inputChar, "startBuf");
 		send(comm->datasock, inputChar, sizeof(inputChar), 0);
 		for (counter = 0; counter < BUF_LEN; counter++) {
 			sprintf(inputChar, "%f", d_fsignal[counter]);
+			fprintf(fpFD, "%f\n", d_fsignal[counter]);
 			send(comm->datasock, inputChar, sizeof(inputChar), 0);
 		}
 		sprintf(inputChar, "endBuf");
 		send(comm->datasock, inputChar, sizeof(inputChar), 0);
 		printf("Buffer Sent\n");
 	}
+	
 	sprintf(inputChar, "FINAL");
 	send(comm->datasock, inputChar, sizeof(inputChar), 0);
 	printf("End command sent\n");
 	printf("Ending Server.\n");
+	fclose(fpD);
+	fclose(fpFD);
 	return 0;
 }
 
@@ -197,8 +211,6 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 	char ParamBuffer[110];
 	int filterCount = 0;
 
-	printf("Executing Thread\n");
-	printf("Checking for Data\n");
 	while (ParamBuffer[0] != '!') {
 		memset(ParamBuffer, 0, sizeof(ParamBuffer));
 		saddr_len = sizeof(saddr);
@@ -228,7 +240,9 @@ VOID client_iface_thread(LPVOID parameters) //LPVOID parameters)
 	x = 0;
 }
 void filterSignal(double *d_samples, double *d_coef, double *d_fsignal) {
+	
 	int i, j;
+	double *temp;
 #pragma omp parallel
 	for (j = 0; j < BUF_LEN; j++) {
 		d_fsignal[j] = 0;
