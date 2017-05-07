@@ -46,7 +46,7 @@ typedef struct sp_struct {
 #define ARG_NONE		1
 #define ARG_NUMBER		2
 #define noop ((void)0)
-#define BUF_LEN			2000
+#define BUF_LEN			1000
 #define B_COEF			101
 #define PI 3.1415926535897
 
@@ -89,9 +89,6 @@ int main()
 	char ParamBuffer[110];
 	char inputChar[110] = "";
 	double filter[B_COEF];
-	for (int count = 0; count < BUF_LEN; count++) {
-		buffer[count] = count;
-	}
 	memset(&profiler, 0, sizeof(profiler));
 	sp_comm_t comm = &profiler.comm;
 
@@ -176,7 +173,7 @@ int main()
 		fscanf(fp2, "%lf\n", &filter[i]);
 	}
 	fclose(fp2);
-	printf("%s    %s \n", sampRate, fName);
+	//printf("%s    %s \n", sampRate, fName);
 	send(comm->datasock, fName, sizeof(fName), 0);
 	send(comm->datasock, sampRate, sizeof(sampRate), 0);
 	for (int i = 0; i < B_COEF - 1; i++) {
@@ -194,7 +191,7 @@ int main()
 			noop;// keep waiting for full buffer
 		}
 		if (bufBusy == 2) {// no buffer recieved yet
-			printf("no buffer yet\n");
+			//printf("no buffer yet\n");
 			noop;
 		}
 	}
@@ -312,12 +309,12 @@ double integrate() {
 	lowLim = 0;
 	highLim = PI/2;
 	max = BUF_LEN/4;
-	sum = buffer[101];
-	printf("%f %f\n", buffer[101],buffer[550]);
-	for (int count = 101; count < max +49; count++) {
+	sum = buffer[249];
+	//printf("%f %f\n", buffer[101],buffer[550]);
+	for (int count = 250; count < max-1; count++) {
 		sum = sum + (2 * buffer[count]);
 	}
-	sum = sum + buffer[550];
+	sum = sum + buffer[max+249];
 	sum = sum*(highLim - lowLim) / (2*max);
 	return sum;
 }

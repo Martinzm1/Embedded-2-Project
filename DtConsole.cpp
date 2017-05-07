@@ -38,7 +38,7 @@ Project Properties > C/C++ > Preprocessor > Preprocessor Definitions > _CRT_SECU
 #define ARG_NUMBER	2
 #define noop ((void)0)
 #define STRLEN 80        /* string size for general text manipulation   */
-#define BUF_LEN			2000
+#define BUF_LEN			1000
 #define B_COEF			101
 
 typedef struct sp_comm {
@@ -169,6 +169,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 		if(pBuffer== NULL){
 			break;
 		}
+		printf("Samples :%lu\n", samples);
 		rawData=(ULNG *) malloc(sizeof(ULNG)*sampleRate);
 		if (channelState == 0) { // if waiting for channel 0 
 			valueA = pBuffer[samples - 2];
@@ -176,13 +177,10 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 
 		}
 		else if (channelState == 1) { // if switch has been activated
-			for(int i=1; i<samples*2; i=i+2){
+			for(int i=1; i<(long)samples; i=i+2){
 				rawData[(i-1)/2]=pBuffer[i];
 			}
 		}
-
-		/* put buffer back to ready list */
-		olDaPutBuffer((HDASS)hAD, hBuf);
 
 		/* display value */
 		if (channelState == 0) { // if waiting for switch
@@ -214,6 +212,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 			filterSignal(arrData, d_coef, filData); //data filtered
 		}
 		puts(str);
+		free(rawData);
 		olDaPutBuffer((HDASS)hAD, hBuf);
 		break;
 
@@ -459,6 +458,8 @@ int main() {
 	printf("\nA/D Operation Terminated \n");
 	sprintf(strSend, "FINAL");
 	send(comm->datasock, strSend, sizeof(strSend), 0);
+	free(arrData);
+	free(filData);
 	fclose(fpD);
 	fclose(fpFD);
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
