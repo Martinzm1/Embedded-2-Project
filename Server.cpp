@@ -1,14 +1,13 @@
-/*-----------------------------------------------------------------------
+/***************************************************************************
 
-PROGRAM: DtConsole.cpp
+Martin Zamora
+Clint Wetzel
 
-PURPOSE:
-Open Layers data acquisition example showing how to implement a
-continuous analog input operation using windows messaging in a
-console environment.
+PROGRAM based on DtConsole.cpp
 
-Project Properties > Linker > Additional Dependencies > Ws2_32.lib
-Project Properties > C/C++ > Preprocessor > Preprocessor Definitions > _CRT_SECURE_NO_WARNINGS
+Notes for Visual Studio:
+	Project Properties > Linker > Additional Dependencies > Ws2_32.lib
+	Project Properties > C/C++ > Preprocessor > Preprocessor Definitions > _CRT_SECURE_NO_WARNINGS
 
 ****************************************************************************/
 #include <string.h>
@@ -20,26 +19,26 @@ Project Properties > C/C++ > Preprocessor > Preprocessor Definitions > _CRT_SECU
 #include <time.h>
 #include "oldaapi.h"
 
-#define CHECKERROR( ecode )                           \
-	do {                                                  \
-	ECODE olStatus;                                    \
-	if( OLSUCCESS != ( olStatus = ( ecode ) ) ) {      \
+#define CHECKERROR( ecode )                           	\
+	do {                                            \
+	ECODE olStatus;                                 \
+	if( OLSUCCESS != ( olStatus = ( ecode ) ) ) {   \
 	printf("OpenLayers Error %d\n", olStatus );     \
 	exit(1);                                        \
-	}                                                  \
-	}                                                     \
+	}                                               \
+	}                                               \
 	while(0)      
 
 #define NUM_OL_BUFFERS	4
-#define ERR_CODE_NONE	0	/* no error */
-#define ERR_CODE_SWI	1	/* software error */
+#define ERR_CODE_NONE	0	// no error
+#define ERR_CODE_SWI	1	// software error
 #define CMD_LENGTH	5
 #define ARG_NONE	1
 #define ARG_NUMBER	2
+#define STRLEN 		80	// string size for general text manipulation
+#define BUF_LEN		1000
+#define B_COEF		101
 #define noop ((void)0)
-#define STRLEN 80        /* string size for general text manipulation   */
-#define BUF_LEN			1000
-#define B_COEF			101
 
 typedef struct sp_comm {
 	WSADATA wsaData;
@@ -68,26 +67,26 @@ typedef struct {
 	int arg;
 } cmd_struct_t;
 
-char str[STRLEN];        /* global string for general text manipulation */
-int counter = 0;
-WSADATA wsaData;
-DBL *arrData;
-DBL *filData;
-int x = 1;
-int socketState = 1;
-int channelState = 0;
-int endSwitch = 0;
-float sampleRate = 0.0;
-char filename[40];
-char dataFile[40];
-char filFile[40];
-int transmit = 0;
-int bootState=0;
-char strSend[20];
-double d_coef[B_COEF];
-FILE *fpD, *fpFD;
-HANDLE hClientThread; // Thread to interface with the ProfileClient
-DWORD dwClientThreadID;
+// Global Variables
+char str[STRLEN];	// global string for general text manipulation
+int counter = 0;	// global counter for position in data array
+WSADATA wsaData;	// Windows socket data struct
+DBL *arrData;		// Pointer to head of our unfiltered data array
+DBL *filData;		// Pointer to head of our filtered data array
+int socketState = 1;	// For looking at socket from client, start in state 1 (filename)
+int channelState = 0;	// Initially look for channel 0
+int endSwitch = 0;	// Set high when program is to close connection and terminate
+float sampleRate = 0.0;	// Our sample rate, actual value to be received from client
+char filename[40];	// string for our filename prefix
+char dataFile[40];	// string for our unfiltered data filename
+char filFile[40];	// string for our filtered data filename
+int transmit = 0;	// flag for being ready to transmit filtered data back to client
+int bootState=0;	// Set high after first activation of CH0 switch
+char strSend[20];	// string for sending data through socket
+double d_coef[B_COEF];	// coeffecients array, stores values received from client
+FILE *fpD, *fpFD;	// File pointers for our <filename>_data.txt and <filename>_filtered.txt
+HANDLE hClientThread;	// Thread to interface with the ProfileClient
+DWORD dwClientThreadID;	// Client thread ID
 
 // Function declarations
 VOID client_iface_thread(LPVOID parameters);
@@ -116,16 +115,18 @@ VOID client_iface_thread(LPVOID parameters) {
 		memset(ParamBuffer, 0, sizeof(ParamBuffer));
 		saddr_len = sizeof(saddr);
 		retval = recvfrom(comm->cmdrecvsock, ParamBuffer, sizeof(ParamBuffer), 0, (struct sockaddr *)&saddr, &saddr_len);
+		
+		/* Increment through each of the strings to be received from the client */
 		switch (socketState) {
-		case 1:
+		case 1:	// Copy filename from client
 			strcpy(filename, ParamBuffer);
 			socketState = 2;
 			break;
-		case 2:
+		case 2:	// copy sampleRate from client
 			sampleRate = atof(ParamBuffer);
 			socketState = 3;
 			break;
-		case 3:
+		case 3: // Receive filter coeffecients from client
 			if (filterCount < (B_COEF - 2)) {
 				d_coef[filterCount] = atof(ParamBuffer);
 				filterCount++;
@@ -152,11 +153,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 	switch (msg) {
 	case OLDA_WM_BUFFER_DONE:
 		HBUF hBuf;
-		//	Channel 0 pBuffer[samples - 2]
-		//	Channel 1 pBuffer[samples - 1]
-
+		
 		olDaGetBuffer((HDASS)hAD, &hBuf);
-		// Check CONTADC.C > Input Box > if( hBuffer )
 		/* get sub system information for code/volts conversion */
 		olDaGetRange((HDASS)hAD, &max, &min);
 		olDaGetResolution((HDASS)hAD, &resolution);
@@ -169,12 +167,12 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 		if(pBuffer== NULL){
 			break;
 		}
+
 		printf("Samples :%lu\n", samples);
 		rawData=(ULNG *) malloc(sizeof(ULNG)*sampleRate);
-		if (channelState == 0) { // if waiting for channel 0 
+		if (channelState == 0) { // Waiting for start switch
 			valueA = pBuffer[samples - 2];
 			voltsA = ((float)max - (float)min) / (1L << resolution)*valueA + (float)min;
-
 		}
 		else if (channelState == 1) { // if switch has been activated
 			for(int i=1; i<(long)samples; i=i+2){
@@ -182,7 +180,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 			}
 		}
 
-		/* display value */
+		/* Display value for Channel 0 and status */
 		if (channelState == 0) { // if waiting for switch
 			if (voltsA > tVal) {
 				sprintf(str, "Channel 0: %.2f Status: ON ", voltsA);
@@ -190,30 +188,31 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 				bootState=1;
 			}
 			else {
-				if(bootState==1){
+				if(bootState == 1){ // Check to see if is first activation of switch
 					endSwitch = 1;
 				}
 				sprintf(str, "Channel 0: %.2f Status: OFF ", voltsA);
 			}
 		}
 		else { // if switch activated
-			   // Store to array from buffer
-			while (counter < (sampleRate)) {
+			// Store data to array from buffer
+			while (counter < sampleRate) {
+				// Convert to Volts
 				arrData[counter] = ((float)max - (float)min) / (1L << resolution)*rawData[counter] + (float)min;
-				fprintf(fpD, "%f\n", arrData[counter]);
-				printf("%d: %lf\n", counter, arrData[counter]);
+				fprintf(fpD, "%f\n", arrData[counter]);			// add to our <filename>_data.txt file
+				printf("%d: %lf\n", counter, arrData[counter]);		// print our values as we convert them
 				counter++;
 			}
 		}
 		if(counter >= (sampleRate)) {
-			channelState = 0; // now look back at the switch
-			counter = 0;
-			transmit = 1;
+			channelState = 0;			// flag set to look at activation switch
+			counter = 0;				// Reset counter
+			transmit = 1;				// set ready to transmit flag
 			filterSignal(arrData, d_coef, filData); //data filtered
 		}
-		puts(str);
-		free(rawData);
-		olDaPutBuffer((HDASS)hAD, hBuf);
+		puts(str);					// Print our Channel status string
+		free(rawData);					// free our rawData arr
+		olDaPutBuffer((HDASS)hAD, hBuf);		// Place our buffer back in the ready queue
 		break;
 
 	case OLDA_WM_QUEUE_DONE:
@@ -257,13 +256,12 @@ BOOL CALLBACK EnumBrdProc(LPSTR lpszBrdName, LPSTR lpszDriverName, LPARAM lParam
 
 
 int main() {
-	// start of TX
 	struct sp_struct profiler;
 	struct sockaddr_in saddr;
 	struct hostent *hp;
 	int res = 0;
-	char ParamBuffer[110] = { 0 };
-	char inputChar[100] = "";
+	char ParamBuffer[110] = { 0 };				// initialize to zero
+	char inputChar[100] = "";				// Empty string
 	double d_fsignal[BUF_LEN + B_COEF - 1] = { 0 };
 	memset(&profiler, 0, sizeof(profiler));
 	sp_comm_t comm = &profiler.comm;
@@ -277,7 +275,7 @@ int main() {
 	/**********************************************************************************
 	* Setup data transmition socket to broadcast data
 	**********************************************************************************/
-
+	
 	hp = (struct hostent*)malloc(sizeof(struct hostent));
 	hp->h_name = (char*)malloc(sizeof(char) * 17);
 	hp->h_addr_list = (char**)malloc(sizeof(char*) * 2);
@@ -337,18 +335,18 @@ int main() {
 	while (socketState != 4) {
 		noop;
 	}
+
+	/* Print our data received from client */
 	printf("Rate, filter coeffecients and filename recieved and stored\n");
 	printf("%s %f", filename, sampleRate);
 	sprintf(dataFile, "%s_data.txt", filename);
 	sprintf(filFile, "%s_filtered.txt", filename);
-	fpD = fopen(dataFile, "a");
-	fpFD = fopen(filFile, "a");
+	fpD = fopen(dataFile, "a");						// open our <filename>_data.txt file
+	fpFD = fopen(filFile, "a");						// open our <filename>_filtered.txt file
 
+	/* Allocate memort to hold our unfiltered and filtered data */
 	arrData = (DBL *)malloc(sizeof(DBL) * sampleRate);
 	filData = (DBL*)malloc(sizeof(DBL)*((sampleRate) + B_COEF-1));
-	// turn on LEDS
-
-	// end of TX
 
 	// create a window for messages
 	WNDCLASS wc;
@@ -383,10 +381,9 @@ int main() {
 	CHECKERROR(olDaSetWndHandle(hAD, hWnd, 0));
 
 	CHECKERROR(olDaSetDataFlow(hAD, OL_DF_CONTINUOUS));
-	CHECKERROR(olDaSetChannelListSize(hAD, 2)); // 2 Channels
-												// Channel setup
-	CHECKERROR(olDaSetChannelListEntry(hAD, 0, 0)); // Channel 0
-	CHECKERROR(olDaSetChannelListEntry(hAD, 1, 1)); // Channel 1
+	CHECKERROR(olDaSetChannelListSize(hAD, 2));		// 2 Channels
+	CHECKERROR(olDaSetChannelListEntry(hAD, 0, 0));		// Channel 0
+	CHECKERROR(olDaSetChannelListEntry(hAD, 1, 1));		// Channel 1
 	CHECKERROR(olDaSetGainListEntry(hAD, 0, 1));
 	CHECKERROR(olDaSetGainListEntry(hAD, 1, 1));
 	CHECKERROR(olDaSetTrigger(hAD, OL_TRG_SOFT));
@@ -395,7 +392,7 @@ int main() {
 	CHECKERROR(olDaSetWrapMode(hAD, OL_WRP_NONE));
 	CHECKERROR(olDaConfig(hAD));
 
-	///* get handle to DOUT sub system  for LED turn on*/
+	/* get handle to DOUT sub system  for LED turn on*/
 	CHECKERROR(olDaGetDASS(hDev, OLSS_DOUT, 0, &hAD2));
 	CHECKERROR(olDaSetDataFlow(hAD2, OL_DF_SINGLEVALUE));
 	CHECKERROR(olDaConfig(hAD2));
@@ -422,62 +419,65 @@ int main() {
 	MSG msg;
 	SetMessageQueue(50);
 
-	// Increase the our message queue size so
-	// we don't lose any data acq messages
-	// Acquire and dispatch messages until a key is hit...since we are a console app 
-	// we are using a mix of Windows messages for data acquistion and console approaches
-	// for keyboard input.
-	// GetMessage( message structure, handle of window receiving the message, lowest message to examine, highest message to examine)
+	/**************************************************************
+	* Increase the our message queue size so
+	* we don't lose any data acq messages
+	* Acquire and dispatch messages until a key is hit...since we are a console app 
+	* we are using a mix of Windows messages for data acquistion and console approaches
+	* for keyboard input.
+	* GetMessage( message structure, handle of window receiving the message, lowest message to examine, highest message to examine)
+	**************************************************************/
+	
 	while (GetMessage(&msg, hWnd, 0, 0)) {
-		TranslateMessage(&msg);    // Translates virtual key codes       
-		DispatchMessage(&msg);     // Dispatches message to window 
-		if (transmit == 1) {
-			sprintf(strSend, "startBuf");
-			send(comm->datasock, strSend, sizeof(strSend), 0);
+		TranslateMessage(&msg);							// Translates virtual key codes       
+		DispatchMessage(&msg);							// Dispatches message to window 
+		if (transmit == 1) {							// If ready to transmit
+			sprintf(strSend, "startBuf");					// Set string to let client know that a buffer is about to be sent
+			send(comm->datasock, strSend, sizeof(strSend), 0);		// Send our start of buffer message
 			while (counter < BUF_LEN) {
 				printf("Transmitting back to client %lf\n", filData[counter]);
-				sprintf(strSend, "%lf", filData[counter]);
-				fprintf(fpFD, "%s\n", strSend);
-				send(comm->datasock, strSend, sizeof(strSend), 0);
+				sprintf(strSend, "%lf", filData[counter]);		// Put filtered data in string
+				fprintf(fpFD, "%s\n", strSend);				// Print filtered data to our <filename>_filtered.txt
+				send(comm->datasock, strSend, sizeof(strSend), 0);	// Send filtered data string to client
 				counter++;
 			}
-			sprintf(strSend, "endBuf");
-			send(comm->datasock, strSend, sizeof(strSend), 0);
-			printf("%d\n", counter);
+			sprintf(strSend, "endBuf");					// Sent string to end of buffer message
+			send(comm->datasock, strSend, sizeof(strSend), 0);		// Send end of buffer message
 			transmit = 0;
 			counter = 0;
 		}
-		if ( endSwitch) { //if switch is turned off.
-			PostQuitMessage(0);
+		if ( endSwitch ) {							// if switch has been turned off
+			PostQuitMessage(0);						// Exit loop
 		}
 	}
-	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));
-	// abort A/D operation
-	olDaAbort(hAD);
-	olDaAbort(hAD2);
+	
+	/* Closing out application */
+	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));				// Set our output value for the LED to off
+	olDaAbort(hAD);									// Abort for hAD, our input handle
+	olDaAbort(hAD2);								// Abort for hAD2, our output handle
 	printf("\nA/D Operation Terminated \n");
-	sprintf(strSend, "FINAL");
-	send(comm->datasock, strSend, sizeof(strSend), 0);
+	sprintf(strSend, "FINAL");							// Set string to close connection
+	send(comm->datasock, strSend, sizeof(strSend), 0);				// Send our close connection message to Client
 	free(arrData);
 	free(filData);
-	fclose(fpD);
-	fclose(fpFD);
+	fclose(fpD);									// Close our <filename>_data.txt file
+	fclose(fpFD);									// Close our <filename>_filtered.txt file
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
-		olDmFreeBuffer(hBufs[i]);
+		olDmFreeBuffer(hBufs[i]);						// Free our hBufs
 	}
-	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));
-	CHECKERROR(olDaReleaseDASS(hAD2));
-	olDaTerminate(hDev);
+	CHECKERROR(olDaReleaseDASS(hAD));						// Release our input handle
+	CHECKERROR(olDaReleaseDASS(hAD2));						// Release our output handle
+	olDaTerminate(hDev);								// Terminate board
 	exit(0);
 }
 
 void filterSignal(double *d_samples, double *d_coef, double *d_fsignal) {
 	int i, j;
-#pragma omp parallel
+	#pragma omp parallel
 	for (j = 0; j < BUF_LEN; j++) {
 		d_fsignal[j] = 0;
 	}
-# pragma omp parallel for private(j)
+	# pragma omp parallel for private(j)
 	for (i = 0; i < B_COEF - 1; i++) {
 		for (j = 0; j < BUF_LEN - 1; j++) {
 			d_fsignal[i + j] = d_fsignal[i + j] + (d_samples[j] * d_coef[i]);
