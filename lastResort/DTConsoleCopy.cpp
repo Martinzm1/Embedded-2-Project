@@ -38,7 +38,7 @@ Project Properties > C/C++ > Preprocessor > Preprocessor Definitions > _CRT_SECU
 #define ARG_NUMBER	2
 #define noop ((void)0)
 #define STRLEN 80        /* string size for general text manipulation   */
-#define BUF_LEN			2000
+
 #define B_COEF			101
 
 typedef struct sp_comm {
@@ -77,6 +77,7 @@ int x = 1;
 int socketState = 1;
 int channelState = 0;
 int endSwitch = 0;
+int bootState = 1;
 float sampleRate = 0.0;
 char filename[40];
 char dataFile[40];
@@ -163,18 +164,16 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 
 		/* get max samples in input buffer */
 		olDmGetValidSamples(hBuf, &samples);
-
+		printf("%lf\n", samples);
 		/* get pointer to the buffer */
 		olDmGetBufferPtr(hBuf, (LPVOID*)&pBuffer);
+		if (pBuffer == NULL) {
+			break;
+		}
 		if (channelState == 0) { // if waiting for channel 0 
 			valueA = pBuffer[samples - 2];
+			voltsA = ((float)max - (float)min) / (1L << resolution)*valueA + (float)min;
 		}
-		else if (channelState == 1) { // if switch has been activated
-			valueA = pBuffer[samples - 1];
-		}
-
-		/* put buffer back to ready list */
-		olDaPutBuffer((HDASS)hAD, hBuf);
 
 		/*  convert value to volts */
 		if (encoding != OL_ENC_BINARY) { // only calculate Volts from valueA if looking for channel 0 
@@ -183,33 +182,35 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM hAD, LPARAM lParam) {
 			valueA &= (1L << resolution) - 1;     /* zero upper bits */
 		}
 
-		voltsA = ((float)max - (float)min) / (1L << resolution)*valueA + (float)min;
-
 		/* display value */
 		if (channelState == 0) { // if waiting for switch
 			if (voltsA > tVal) {
 				sprintf(str, "Channel 0: %.2f Status: ON ", voltsA);
 				channelState = 1;
+				bootState = 0;
 			}
 			else {
-				endSwitch = 1;
-				sprintf(str, "Channel 0: %.2f Status: OFF ", voltsA);
+				if(bootState==1){
+					break;
+				}
+				else {
+					endSwitch = 1;
+				}
 			}
 		}
 		else { // if switch activated
 			   // Store to array from buffer
-			if (counter < (sampleRate / 200)) {
-				arrData[counter] = voltsA;
+
+			for (counter = 1; counter < samples; counter = counter + 2){
+				arrData[(counter-1)/2] = ((float)max - (float)min) / (1L << resolution)*pBuffer[counter] + (float)min;
 				fprintf(fpD, "%f\n", arrData[counter]);
 				printf("%d: %lf %lf\n", counter, arrData[counter], voltsA);
 				counter++;
 			}
-			else {
-				channelState = 0; // now look back at the switch
-				counter = 0;
-				transmit = 1;
-				filterSignal(arrData, d_coef, filData); //data filtered
-			}
+			channelState = 0; // now look back at the switch
+			counter = 0;
+			transmit = 1;
+			filterSignal(arrData, d_coef, filData); //data filtered
 		}
 		puts(str);
 		olDaPutBuffer((HDASS)hAD, hBuf);
@@ -264,7 +265,7 @@ int main() {
 	int i;
 	char ParamBuffer[110] = { 0 };
 	char inputChar[100] = "";
-	double d_fsignal[BUF_LEN + B_COEF - 1] = { 0 };
+	
 	memset(&profiler, 0, sizeof(profiler));
 	sp_comm_t comm = &profiler.comm;
 
@@ -343,9 +344,8 @@ int main() {
 	sprintf(filFile, "%s_filtered.txt", filename);
 	fpD = fopen(dataFile, "a");
 	fpFD = fopen(filFile, "a");
-
 	arrData = (DBL *)malloc(sizeof(DBL) * sampleRate);
-	filData = (DBL*)malloc(sizeof(DBL)*((sampleRate) + B_COEF-1));
+	filData = (DBL*)malloc(sizeof(DBL)*((sampleRate)+B_COEF - 1));
 	// turn on LEDS
 
 	// end of TX
@@ -403,7 +403,7 @@ int main() {
 
 	HBUF hBufs[NUM_OL_BUFFERS];
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
-		if (OLSUCCESS != olDmAllocBuffer(GHND, 1000, &hBufs[i])) {
+		if (OLSUCCESS != olDmAllocBuffer(GHND, 2*sampleRate, &hBufs[i])) {
 			for (i--; i >= 0; i--) {
 				olDmFreeBuffer(hBufs[i]);
 			}
@@ -432,30 +432,37 @@ int main() {
 		TranslateMessage(&msg);    // Translates virtual key codes       
 		DispatchMessage(&msg);     // Dispatches message to window 
 		if (transmit == 1) {
-			while (counter < BUF_LEN) {
+			sprintf(strSend, "startBuf");
+			send(comm->datasock, strSend, sizeof(strSend), 0);
+			while (counter < sampleRate) {
 				printf("Transmitting back to client %lf\n", filData[counter]);
 				sprintf(strSend, "%lf", filData[counter]);
+				fprintf(fpFD, "%s\n", strSend);
 				send(comm->datasock, strSend, sizeof(strSend), 0);
 				counter++;
 			}
+			sprintf(strSend, "endBuf");
+			send(comm->datasock, strSend, sizeof(strSend), 0);
+			printf("%d\n", counter);
 			transmit = 0;
 			counter = 0;
 		}
-		if ( endSwitch) { //if switch is turned off.
+		if (endSwitch) { //if switch is turned off.
 			PostQuitMessage(0);
 		}
 	}
-
+	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));
 	// abort A/D operation
 	olDaAbort(hAD);
+	olDaAbort(hAD2);
+	sprintf(strSend, "FINAL");
+	send(comm->datasock, strSend, sizeof(strSend), 0);
 	printf("\nA/D Operation Terminated \n");
 	fclose(fpD);
 	fclose(fpFD);
 	for (int i = 0; i < NUM_OL_BUFFERS; i++) {
 		olDmFreeBuffer(hBufs[i]);
 	}
-	CHECKERROR(olDaPutSingleValue(hAD2, 0, 0, 1.0));
-	CHECKERROR(olDaReleaseDASS(hAD2));
 	olDaTerminate(hDev);
 	exit(0);
 }
@@ -463,12 +470,12 @@ int main() {
 void filterSignal(double *d_samples, double *d_coef, double *d_fsignal) {
 	int i, j;
 #pragma omp parallel
-	for (j = 0; j < BUF_LEN; j++) {
+	for (j = 0; j < sampleRate; j++) {
 		d_fsignal[j] = 0;
 	}
 # pragma omp parallel for private(j)
 	for (i = 0; i < B_COEF - 1; i++) {
-		for (j = 0; j < BUF_LEN - 1; j++) {
+		for (j = 0; j < sampleRate - 1; j++) {
 			d_fsignal[i + j] = d_fsignal[i + j] + (d_samples[j] * d_coef[i]);
 		}
 	}
