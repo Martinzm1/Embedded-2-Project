@@ -46,7 +46,7 @@ typedef struct sp_struct {
 #define ARG_NONE		1
 #define ARG_NUMBER		2
 #define noop ((void)0)
-#define BUF_LEN			2000
+#define BUF_LEN			1000
 #define B_COEF			101
 #define PI 3.1415926535897
 
@@ -298,7 +298,7 @@ double minSignal(double *d_signal, int length) {
 	double min = d_signal[100];
 
 	for (i = 100; i < length; i++) {
-		if (d_signal[i] > min) {
+		if (d_signal[i] <min) {
 			min = d_signal[i];
 		}
 	}
@@ -310,14 +310,14 @@ double integrate() {
 	int count, max;
 	double sum, lowLim, highLim;
 	lowLim = 0;
-	highLim = PI/2;
-	max = BUF_LEN/4;
+	highLim = 2*PI;
+	max = BUF_LEN;
 	sum = buffer[101];
-	printf("%f %f\n", buffer[101],buffer[550]);
-	for (int count = 101; count < max +49; count++) {
+	for (int count = 101; count < max; count++) {
 		sum = sum + (2 * buffer[count]);
 	}
-	sum = sum + buffer[550];
+	sum = sum + buffer[900];
+
 	sum = sum*(highLim - lowLim) / (2*max);
 	return sum;
 }
