@@ -420,7 +420,7 @@ int main() {
 	else {
 		printf("A/D Operation Started...hit any key to terminate.\n\n");
 	}
-
+	printf("Waiting for start switch in channel 0\n");
 	MSG msg;
 	SetMessageQueue(50);
 
