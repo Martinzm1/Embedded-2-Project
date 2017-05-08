@@ -1,6 +1,6 @@
 /*Clint Wetzel
 //Martin Zamora Martinez
-/CSE 4320 - 001  Embedded Systems II 
+/CSE 4342 - 001  Embedded Systems II 
 //University of Texas at Arlington
 Real-Time Data Acquasition  with Communication between Server and Client
 
